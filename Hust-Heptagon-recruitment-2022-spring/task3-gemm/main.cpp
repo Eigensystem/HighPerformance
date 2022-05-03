@@ -6,7 +6,8 @@
 #include <chrono>
 #include <vector>
 #include <cassert>
-#include </opt/homebrew/Cellar/libomp/13.0.0/include/omp.h>
+#include <omp.h>
+// #include "stdafx.h"
 
 #define PRINT_TIME(code) do { \
     auto start = system_clock::now(); \
@@ -27,7 +28,7 @@ const string data_path("./data/");
 
 void Gemm(const int &size, vec &a, vec &b, vec &c) {
     int i, j, k;
-    omp_set_num_threads(8);
+    omp_set_num_threads(24);
     #pragma omp parallel shared(a,b,c) private(i,j,k)
     {
         #pragma omp for schedule(dynamic)
