@@ -6,6 +6,7 @@
 #include <chrono>
 #include <vector>
 #include <cassert>
+#include </opt/homebrew/Cellar/libomp/13.0.0/include/omp.h>
 
 #define PRINT_TIME(code) do { \
     auto start = system_clock::now(); \
@@ -25,10 +26,16 @@ const int scale[] = {256, 512, 1024, 2048};
 const string data_path("./data/");
 
 void Gemm(const int &size, vec &a, vec &b, vec &c) {
-    for(int i = 0; i < size; i++)
-        for(int j = 0; j < size; j++)
-            for(int k = 0; k < size; k++)
-                c[i*size+j] += a[i*size+k] * b[k*size+j];
+    int i, j, k;
+    omp_set_num_threads(8);
+    #pragma omp parallel shared(a,b,c) private(i,j,k)
+    {
+        #pragma omp for schedule(dynamic)
+        for(i = 0; i < size; i++)
+            for(j = 0; j < size; j++)
+                for(k = 0; k < size; k++)
+                    c[i*size+j] += a[i*size+k] * b[k*size+j];
+    }
 }
 
 void CheckResult(const vec &c, const string &result_path) {
