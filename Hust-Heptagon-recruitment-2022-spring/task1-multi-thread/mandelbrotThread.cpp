@@ -15,7 +15,6 @@ extern void mandelbrotSerial(
 extern float x0, x1, y0, y1;
 extern unsigned int width, height;
 extern int maxIterations, threadId, numThreads;
-
 //
 // workerThreadStart --
 //
@@ -53,7 +52,7 @@ void mandelbrotThread(int output[])
     for (int i=0; i<numThreads; i++) {
         // TODO FOR CS149 STUDENTS: You may or may not wish to modify
         // the per-thread arguments here.  The code below copies the
-        // same arguments for each thread
+        // same arguments for each thread`
         args[i].output = output;
         args[i].threadId = i;
     }

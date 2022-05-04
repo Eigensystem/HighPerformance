@@ -6,8 +6,7 @@
 #include <chrono>
 #include <vector>
 #include <cassert>
-#include <omp.h>
-// #include "stdafx.h"
+#include <thread>
 
 #define PRINT_TIME(code) do { \
     auto start = system_clock::now(); \
@@ -25,17 +24,57 @@ using vec = vector<int>;
 
 const int scale[] = {256, 512, 1024, 2048};
 const string data_path("./data/");
+const int num_threads = 8; 
+
+
+
+void transpose(const int size, const vec input, vec &result, 
+                int thread_id){
+    int single_processing_line = size / num_threads;
+    int start = single_processing_line * thread_id;
+    int end = single_processing_line * (thread_id + 1);
+    for(int i = start; i < end; ++i){
+        for(int j = 0; j < size; ++j){
+            result[i*size + j] = input[j*size + i];
+        }
+    }
+}
+
+void multi_threads_gemm(const int size, const vec a, const vec b, 
+                vec &c, int thread_id){                
+    int single_processing_line = size / num_threads; 
+    int start = single_processing_line * thread_id;
+    int end = single_processing_line * (thread_id + 1);
+    for(int i = start; i < end; ++i){
+        for(int j = 0; j < size; ++j){
+            int sum = 0;
+            int k;
+            for(k = 0; k < size; ++k){
+                sum += a[i * size + k] * b[j * size + k];
+            }
+            c[i * size + j] = sum;
+        }
+    }
+}
 
 void Gemm(const int &size, vec &a, vec &b, vec &c) {
-    int i, j, k;
-    omp_set_num_threads(24);
-    #pragma omp parallel shared(a,b,c) private(i,j,k)
-    {
-        #pragma omp for schedule(dynamic)
-        for(i = 0; i < size; i++)
-            for(j = 0; j < size; j++)
-                for(k = 0; k < size; k++)
-                    c[i*size+j] += a[i*size+k] * b[k*size+j];
+    vec b_transposed(size*size, 0);
+    std::thread workers[num_threads];
+    for(int i = 1; i < num_threads; ++i){
+        workers[i] = std::thread(transpose, size, b, 
+                                std::ref(b_transposed), i);
+    }
+    transpose(size, b, b_transposed, 0);
+    for(int i = 1; i < num_threads; ++i){
+        workers[i].join();
+    }
+    for(int i = 1; i < num_threads; ++i){
+        workers[i] = std::thread(multi_threads_gemm, size, a, 
+                                b_transposed, std::ref(c), i);
+    }
+    multi_threads_gemm(size, a, b_transposed, c, 0);
+    for(int i = 1; i < num_threads; ++i) {
+        workers[i].join();
     }
 }
 
