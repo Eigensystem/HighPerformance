@@ -3,3 +3,5 @@ data.tar.gz
 .vscode/
 .DS_Store
 *.[oa]
+.vscode/
+gemm
