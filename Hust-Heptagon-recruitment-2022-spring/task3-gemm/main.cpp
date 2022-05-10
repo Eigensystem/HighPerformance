@@ -28,9 +28,10 @@ const int scale[] = {256, 512, 1024, 2048};
 const string data_path("./data/");
 const int num_threads = 8; 
 
-// #pragma pack(16)
-int a[4194304], b[4194304], c[4194304];
-int b_transport[4194304];
+int a[4194304] __attribute__((__aligned__((32))));
+int b[4194304] __attribute__((__aligned__((32))));
+int c[4194304] __attribute__((__aligned__((32))));
+int b_transport[4194304] __attribute__((__aligned__((32))));
 
 void transpose(const int size, int thread_id){
     int single_processing_line = size / num_threads;
@@ -47,34 +48,57 @@ void multi_threads_gemm(const int size, int thread_id){
     int single_processing_line = size / num_threads; 
     int start = single_processing_line * thread_id;
     int end = single_processing_line * (thread_id + 1);
-    for(int i = start; i < end; ++i){
-        for(int j = 0; j < size; ++j){
-            int sum;
-            int32x4_t sum_vec;
-            int32x4x4_t sum_group;
-            int32x4x4_t a_vec, b_vec;
-            sum_group.val[0] = {0, 0, 0, 0};
-            sum_group.val[1] = {0, 0, 0, 0};
-            sum_group.val[2] = {0, 0, 0, 0};
-            sum_group.val[3] = {0, 0, 0, 0};
-            for(int k = 0; k < size; k += 16){
-                a_vec = vld1q_s32_x4((int *)&a[i * size + k]);
-                b_vec = vld1q_s32_x4((int *)&b_transport[j * size + k]);
-                sum_group.val[0] = vmlaq_s32(sum_group.val[0], a_vec.val[0], b_vec.val[0]);
-                sum_group.val[1] = vmlaq_s32(sum_group.val[1], a_vec.val[1], b_vec.val[1]);
-                sum_group.val[2] = vmlaq_s32(sum_group.val[2], a_vec.val[2], b_vec.val[2]);
-                sum_group.val[3] = vmlaq_s32(sum_group.val[3], a_vec.val[3], b_vec.val[3]);
-            }
-            sum_vec = vaddq_s32(vaddq_s32(sum_group.val[0], sum_group.val[1]), vaddq_s32(sum_group.val[2], sum_group.val[3]));
+    int i = start;
+    int byte_a_line = 4 * size;
+    int sum;
+    int32x4_t sum_vec;
+    int32x4_t sum_group_val_0, sum_group_val_1, sum_group_val_2, sum_group_val_3;
+    int32x4_t a_vec_val_0, a_vec_val_1, a_vec_val_2, a_vec_val_3;
+    int32x4_t b_vec_val_0, b_vec_val_1, b_vec_val_2, b_vec_val_3;
+    int32x4_t * a_addr = (int32x4_t *)((char *)&a + start * byte_a_line);
+    int32x4_t * a_group_addr_now;
+    int32x4_t * b_group_addr_now;
+    do {
+        int j = 0;
+        int32x4_t * b_transport_addr = (int32x4_t *)&b_transport;
+        do {
+            int k = 0;
+            sum_group_val_0 = {0, 0, 0, 0};
+            sum_group_val_1 = {0, 0, 0, 0};
+            sum_group_val_2 = {0, 0, 0, 0};
+            sum_group_val_3 = {0, 0, 0, 0};
+            a_group_addr_now = a_addr;
+            b_group_addr_now = b_transport_addr;
+            do {
+                a_vec_val_0 = a_group_addr_now[0];
+                a_vec_val_1 = a_group_addr_now[1];
+                a_vec_val_2 = a_group_addr_now[2];
+                a_vec_val_3 = a_group_addr_now[3];
+                a_group_addr_now += 4;
+                b_vec_val_0 = b_group_addr_now[0];
+                b_vec_val_1 = b_group_addr_now[1];
+                b_vec_val_2 = b_group_addr_now[2];
+                b_vec_val_3 = b_group_addr_now[3];
+                b_group_addr_now += 4;
+                sum_group_val_0 = vmlaq_s32(sum_group_val_0, b_vec_val_0, a_vec_val_0);
+                sum_group_val_1 = vmlaq_s32(sum_group_val_1, b_vec_val_1, a_vec_val_1);
+                sum_group_val_2 = vmlaq_s32(sum_group_val_2, b_vec_val_2, a_vec_val_2);
+                sum_group_val_3 = vmlaq_s32(sum_group_val_3, b_vec_val_3, a_vec_val_3);
+                k += 16;
+            } while(k < size);
+            sum_vec = vaddq_s32(vaddq_s32(vaddq_s32(sum_group_val_0, sum_group_val_1), sum_group_val_2), sum_group_val_3);
             sum = sum_vec[0] + sum_vec[1] + sum_vec[2] + sum_vec[3];
             c[i * size + j] = sum;
-        }
-    }
+            b_transport_addr = (int32x4_t *)((char *)b_transport_addr + byte_a_line);
+            ++j;
+        } while(j != size);
+        ++i;
+        a_addr = (int32x4_t *)((char *)a_addr + byte_a_line);
+    } while(i != end);
 }
 
 void Gemm(const int &size) {
     std::thread workers[num_threads];
-    // memset(b_transport, 0, size * size);
     for(int i = 1; i < num_threads; ++i){
         workers[i] = std::thread(transpose, size, i);
     }
@@ -82,7 +106,6 @@ void Gemm(const int &size) {
     for(int i = 1; i < num_threads; ++i){
         workers[i].join();
     }
-    // printf("%d\n", b_transport[1]);
     for(int i = 1; i < num_threads; ++i){
         workers[i] = std::thread(multi_threads_gemm, size, i);
     }
