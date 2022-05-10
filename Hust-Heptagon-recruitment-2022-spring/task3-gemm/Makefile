@@ -1,5 +1,5 @@
 gemm: main.cpp
-	$(CXX) main.cpp -o gemm -O0 -Wall -Werror -std=c++11 -lm -lpthread
+	$(CXX) main.cpp -o gemm -O0 -g -Wall -Werror -std=c++11 -lm -lpthread
 
 .PHONY: clean
 clean:

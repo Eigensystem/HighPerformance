@@ -7,6 +7,7 @@
 #include <vector>
 #include <cassert>
 #include <thread>
+#include <string.h>
 #include <arm_neon.h>
 
 #define PRINT_TIME(code) do { \
@@ -27,21 +28,22 @@ const int scale[] = {256, 512, 1024, 2048};
 const string data_path("./data/");
 const int num_threads = 8; 
 
+// #pragma pack(16)
+int a[4194304], b[4194304], c[4194304];
+int b_transport[4194304];
 
-void transpose(const int size, const vec input, vec &result, 
-                int thread_id){
+void transpose(const int size, int thread_id){
     int single_processing_line = size / num_threads;
     int start = single_processing_line * thread_id;
     int end = single_processing_line * (thread_id + 1);
     for(int i = start; i < end; ++i){
         for(int j = 0; j < size; ++j){
-            result[i*size + j] = input[j*size + i];
+            b_transport[i*size + j] = b[j*size + i];
         }
     }
 }
 
-void multi_threads_gemm(const int size, const vec a, const vec b, 
-                vec &c, int thread_id){                
+void multi_threads_gemm(const int size, int thread_id){                
     int single_processing_line = size / num_threads; 
     int start = single_processing_line * thread_id;
     int end = single_processing_line * (thread_id + 1);
@@ -57,7 +59,7 @@ void multi_threads_gemm(const int size, const vec a, const vec b,
             sum_group.val[3] = {0, 0, 0, 0};
             for(int k = 0; k < size; k += 16){
                 a_vec = vld1q_s32_x4((int *)&a[i * size + k]);
-                b_vec = vld1q_s32_x4((int *)&b[j * size + k]);
+                b_vec = vld1q_s32_x4((int *)&b_transport[j * size + k]);
                 sum_group.val[0] = vmlaq_s32(sum_group.val[0], a_vec.val[0], b_vec.val[0]);
                 sum_group.val[1] = vmlaq_s32(sum_group.val[1], a_vec.val[1], b_vec.val[1]);
                 sum_group.val[2] = vmlaq_s32(sum_group.val[2], a_vec.val[2], b_vec.val[2]);
@@ -70,34 +72,36 @@ void multi_threads_gemm(const int size, const vec a, const vec b,
     }
 }
 
-void Gemm(const int &size, vec &a, vec &b, vec &c) {
-    vec b_transposed(size*size, 0);
+void Gemm(const int &size) {
     std::thread workers[num_threads];
+    // memset(b_transport, 0, size * size);
     for(int i = 1; i < num_threads; ++i){
-        workers[i] = std::thread(transpose, size, b, 
-                                std::ref(b_transposed), i);
+        workers[i] = std::thread(transpose, size, i);
     }
-    transpose(size, b, b_transposed, 0);
+    transpose(size, 0);
     for(int i = 1; i < num_threads; ++i){
         workers[i].join();
     }
+    // printf("%d\n", b_transport[1]);
     for(int i = 1; i < num_threads; ++i){
-        workers[i] = std::thread(multi_threads_gemm, size, a, 
-                                b_transposed, std::ref(c), i);
+        workers[i] = std::thread(multi_threads_gemm, size, i);
     }
-    multi_threads_gemm(size, a, b_transposed, c, 0);
-    for(int i = 1; i < num_threads; ++i) {
+    multi_threads_gemm(size, 0);
+    for(int i = 1; i < num_threads; ++i){
         workers[i].join();
     }
 }
 
-void CheckResult(const vec &c, const string &result_path) {
+void CheckResult(const int &size, const string &result_path) {
     ifstream file_result(result_path);
-    int nelems = c.size();
+    int nelems = size * size;
     float res_i;
     for(int i = 0; i < nelems; i++) {
         file_result >> res_i;
-        assert(c[i] == res_i);
+        if(c[i] != res_i){
+            printf("idx:%d, %d : %f\n", i, c[i], res_i);
+            assert(c[i] == res_i);
+        }
     }
     file_result.close();
 }
@@ -111,10 +115,6 @@ void Benchmark(const int &size) {
     ifstream file_a(a_path);
     ifstream file_b(b_path);
 
-    vec a(nelems, 0);
-    vec b(nelems, 0);
-    vec c(nelems, 0);
-
     for(int i = 0; i < nelems; i++) {
         file_a >> a[i];
     }
@@ -123,10 +123,10 @@ void Benchmark(const int &size) {
     }
 
     PRINT_TIME(
-        Gemm(size, a, b, c);
+        Gemm(size);
     );
     
-    CheckResult(c, result_path);
+    CheckResult(size, result_path);
 
     file_a.close();
     file_b.close();
