@@ -28,10 +28,10 @@ const int scale[] = {256, 512, 1024, 2048};
 const string data_path("./data/");
 const int num_threads = 8; 
 
-int a[4194304] __attribute__((__aligned__((32))));
-int b[4194304] __attribute__((__aligned__((32))));
-int c[4194304] __attribute__((__aligned__((32))));
-int b_transport[4194304] __attribute__((__aligned__((32))));
+int a[4194304] __attribute__((__aligned__((0x100))));
+int b[4194304] __attribute__((__aligned__((0x100))));
+int c[4194304] __attribute__((__aligned__((0x100))));
+int b_transport[4194304] __attribute__((__aligned__((0x100))));
 
 void transpose(const int size, int thread_id){
     int single_processing_line = size / num_threads;
